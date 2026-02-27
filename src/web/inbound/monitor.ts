@@ -222,17 +222,13 @@ export async function monitorWebInbox(options: {
           .runWhatsAppMessagesUpsert(
             {
               type: upsert.type,
-              messages: [msg as unknown],
-              metadata: {
-                rawMessageCount: upsert.messages?.length ?? 0,
-                messageId: id,
-              },
+              message: msg as unknown,
+              metadata: accessControlInput,
             },
             {
               channelId: "whatsapp",
               accountId: options.accountId,
               conversationId: from,
-              accessControlInput,
             },
           )
           .catch((err) => {

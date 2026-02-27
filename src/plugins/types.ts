@@ -453,12 +453,8 @@ export type PluginHookMessageReceivedEvent = {
 // whatsapp_messages_upsert hook
 export type PluginHookWhatsAppMessagesUpsertEvent = {
   type?: string;
-  messages?: unknown[];
-  metadata?: Record<string, unknown>;
-};
-
-export type PluginHookWhatsAppMessagesUpsertContext = PluginHookMessageContext & {
-  accessControlInput: {
+  message?: unknown;
+  metadata?: {
     accountId: string;
     from: string;
     selfE164: string | null;
@@ -721,7 +717,7 @@ export type PluginHookHandlerMap = {
   ) => Promise<void> | void;
   whatsapp_messages_upsert: (
     event: PluginHookWhatsAppMessagesUpsertEvent,
-    ctx: PluginHookWhatsAppMessagesUpsertContext,
+    ctx: PluginHookMessageContext,
   ) => Promise<void> | void;
   message_sending: (
     event: PluginHookMessageSendingEvent,

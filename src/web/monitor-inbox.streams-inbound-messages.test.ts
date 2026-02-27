@@ -164,14 +164,8 @@ describe("web monitor inbox", () => {
     expect(runWhatsAppMessagesUpsert).toHaveBeenCalledWith(
       {
         type: "notify",
-        messages: upsert.messages,
-        metadata: { rawMessageCount: 1, messageId: "abc" },
-      },
-      {
-        channelId: "whatsapp",
-        accountId: DEFAULT_ACCOUNT_ID,
-        conversationId: "+999",
-        accessControlInput: {
+        message: upsert.messages[0],
+        metadata: {
           accountId: DEFAULT_ACCOUNT_ID,
           from: "+999",
           selfE164: "+123",
@@ -184,6 +178,11 @@ describe("web monitor inbox", () => {
           sock: { sendMessage: expect.any(Function) },
           remoteJid: "999@s.whatsapp.net",
         },
+      },
+      {
+        channelId: "whatsapp",
+        accountId: DEFAULT_ACCOUNT_ID,
+        conversationId: "+999",
       },
     );
     expect(checkInboundAccessControlMock).toHaveBeenCalledTimes(1);
