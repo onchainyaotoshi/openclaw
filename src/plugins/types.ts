@@ -457,6 +457,30 @@ export type PluginHookWhatsAppMessagesUpsertEvent = {
   metadata?: Record<string, unknown>;
 };
 
+export type PluginHookWhatsAppMessagesUpsertResult = {
+  accessControl?: {
+    allowed?: boolean;
+    shouldMarkRead?: boolean;
+    isSelfChat?: boolean;
+    resolvedAccountId?: string;
+  };
+};
+
+export type PluginHookWhatsAppMessagesUpsertContext = PluginHookMessageContext & {
+  accessControlInput: {
+    accountId: string;
+    from: string;
+    selfE164: string | null;
+    senderE164: string | null;
+    group: boolean;
+    pushName?: string;
+    isFromMe: boolean;
+    messageTimestampMs?: number;
+    connectedAtMs?: number;
+    remoteJid: string;
+  };
+};
+
 // message_sending hook
 export type PluginHookMessageSendingEvent = {
   to: string;
@@ -703,8 +727,11 @@ export type PluginHookHandlerMap = {
   ) => Promise<void> | void;
   whatsapp_messages_upsert: (
     event: PluginHookWhatsAppMessagesUpsertEvent,
-    ctx: PluginHookMessageContext,
-  ) => Promise<void> | void;
+    ctx: PluginHookWhatsAppMessagesUpsertContext,
+  ) =>
+    | Promise<PluginHookWhatsAppMessagesUpsertResult | void>
+    | PluginHookWhatsAppMessagesUpsertResult
+    | void;
   message_sending: (
     event: PluginHookMessageSendingEvent,
     ctx: PluginHookMessageContext,

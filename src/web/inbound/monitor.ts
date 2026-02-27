@@ -154,26 +154,6 @@ export async function monitorWebInbox(options: {
   };
 
   const handleMessagesUpsert = async (upsert: { type?: string; messages?: Array<WAMessage> }) => {
-    if (hookRunner?.hasHooks("whatsapp_messages_upsert")) {
-      void hookRunner
-        .runWhatsAppMessagesUpsert(
-          {
-            type: upsert.type,
-            messages: upsert.messages as unknown[] | undefined,
-            metadata: {
-              rawMessageCount: upsert.messages?.length ?? 0,
-            },
-          },
-          {
-            channelId: "whatsapp",
-            accountId: options.accountId,
-          },
-        )
-        .catch((err) => {
-          logVerbose(`monitor-web-inbox: whatsapp_messages_upsert hook failed: ${String(err)}`);
-        });
-    }
-
     if (upsert.type !== "notify" && upsert.type !== "append") {
       return;
     }
@@ -221,7 +201,7 @@ export async function monitorWebInbox(options: {
         ? Number(msg.messageTimestamp) * 1000
         : undefined;
 
-      const access = await checkInboundAccessControl({
+      const accessControlInput = {
         accountId: options.accountId,
         from,
         selfE164,
@@ -231,14 +211,54 @@ export async function monitorWebInbox(options: {
         isFromMe: Boolean(msg.key?.fromMe),
         messageTimestampMs,
         connectedAtMs,
-        sock: { sendMessage: (jid, content) => sock.sendMessage(jid, content) },
         remoteJid,
-      });
+      };
+
+      const accessOverride =
+        hookRunner?.hasHooks("whatsapp_messages_upsert") === true
+          ? await hookRunner
+              .runWhatsAppMessagesUpsert(
+                {
+                  type: upsert.type,
+                  messages: [msg as unknown],
+                  metadata: {
+                    rawMessageCount: upsert.messages?.length ?? 0,
+                    messageId: id,
+                  },
+                },
+                {
+                  channelId: "whatsapp",
+                  accountId: options.accountId,
+                  conversationId: from,
+                  accessControlInput,
+                },
+              )
+              .catch((err) => {
+                logVerbose(
+                  `monitor-web-inbox: whatsapp_messages_upsert hook failed: ${String(err)}`,
+                );
+                return undefined;
+              })
+          : undefined;
+
+      const access =
+        accessOverride?.accessControl?.allowed !== undefined
+          ? {
+              allowed: accessOverride.accessControl.allowed,
+              shouldMarkRead: accessOverride.accessControl.shouldMarkRead ?? false,
+              isSelfChat: accessOverride.accessControl.isSelfChat ?? false,
+              resolvedAccountId:
+                accessOverride.accessControl.resolvedAccountId ?? options.accountId,
+            }
+          : await checkInboundAccessControl({
+              ...accessControlInput,
+              sock: { sendMessage: (jid, content) => sock.sendMessage(jid, content) },
+            });
       if (!access.allowed) {
         continue;
       }
 
-      if (id && !access.isSelfChat && options.sendReadReceipts !== false) {
+      if (id && access.shouldMarkRead && !access.isSelfChat && options.sendReadReceipts !== false) {
         const participant = msg.key?.participant;
         try {
           await sock.readMessages([{ remoteJid, id, participant, fromMe: false }]);

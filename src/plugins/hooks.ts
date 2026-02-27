@@ -28,7 +28,9 @@ import type {
   PluginHookGatewayStopEvent,
   PluginHookMessageContext,
   PluginHookMessageReceivedEvent,
+  PluginHookWhatsAppMessagesUpsertContext,
   PluginHookWhatsAppMessagesUpsertEvent,
+  PluginHookWhatsAppMessagesUpsertResult,
   PluginHookMessageSendingEvent,
   PluginHookMessageSendingResult,
   PluginHookMessageSentEvent,
@@ -69,7 +71,9 @@ export type {
   PluginHookAfterCompactionEvent,
   PluginHookMessageContext,
   PluginHookMessageReceivedEvent,
+  PluginHookWhatsAppMessagesUpsertContext,
   PluginHookWhatsAppMessagesUpsertEvent,
+  PluginHookWhatsAppMessagesUpsertResult,
   PluginHookMessageSendingEvent,
   PluginHookMessageSendingResult,
   PluginHookMessageSentEvent,
@@ -390,13 +394,26 @@ export function createHookRunner(registry: PluginRegistry, options: HookRunnerOp
 
   /**
    * Run whatsapp_messages_upsert hook.
-   * Runs in parallel (fire-and-forget).
+   * Runs sequentially so plugins can deterministically decide access overrides.
    */
   async function runWhatsAppMessagesUpsert(
     event: PluginHookWhatsAppMessagesUpsertEvent,
-    ctx: PluginHookMessageContext,
-  ): Promise<void> {
-    return runVoidHook("whatsapp_messages_upsert", event, ctx);
+    ctx: PluginHookWhatsAppMessagesUpsertContext,
+  ): Promise<PluginHookWhatsAppMessagesUpsertResult | undefined> {
+    return runModifyingHook<"whatsapp_messages_upsert", PluginHookWhatsAppMessagesUpsertResult>(
+      "whatsapp_messages_upsert",
+      event,
+      ctx,
+      (acc, next) => ({
+        accessControl: {
+          allowed: next.accessControl?.allowed ?? acc?.accessControl?.allowed,
+          shouldMarkRead: next.accessControl?.shouldMarkRead ?? acc?.accessControl?.shouldMarkRead,
+          isSelfChat: next.accessControl?.isSelfChat ?? acc?.accessControl?.isSelfChat,
+          resolvedAccountId:
+            next.accessControl?.resolvedAccountId ?? acc?.accessControl?.resolvedAccountId,
+        },
+      }),
+    );
   }
 
   /**
