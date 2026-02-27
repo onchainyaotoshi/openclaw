@@ -217,12 +217,70 @@ export async function monitorWebInbox(options: {
         remoteJid,
       };
 
+      const location = extractLocationData(msg.message ?? undefined);
+      const locationText = location ? formatLocationText(location) : undefined;
+      let hookBody = extractText(msg.message ?? undefined);
+      if (locationText) {
+        hookBody = [hookBody, locationText].filter(Boolean).join("\n").trim();
+      }
+      if (!hookBody) {
+        hookBody = extractMediaPlaceholder(msg.message ?? undefined) ?? "";
+      }
+      const replyContext = describeReplyContext(msg.message as proto.IMessage | undefined);
+      const mentionedJids = extractMentionedJids(msg.message as proto.IMessage | undefined);
+      const senderName = msg.pushName ?? undefined;
+
+      const chatJid = remoteJid;
+      const sendComposing = async () => {
+        try {
+          await sock.sendPresenceUpdate("composing", chatJid);
+        } catch (err) {
+          logVerbose(`Presence update failed: ${String(err)}`);
+        }
+      };
+      const reply = async (text: string) => {
+        await sock.sendMessage(chatJid, { text });
+      };
+      const sendMedia = async (payload: AnyMessageContent) => {
+        await sock.sendMessage(chatJid, payload);
+      };
+      const timestamp = messageTimestampMs;
+      const hookMessage: WebInboundMessage = {
+        id,
+        from,
+        conversationId: from,
+        to: selfE164 ?? "me",
+        accountId: options.accountId,
+        body: hookBody,
+        pushName: senderName,
+        timestamp,
+        chatType: group ? "group" : "direct",
+        chatId: remoteJid,
+        senderJid: participantJid,
+        senderE164: senderE164 ?? undefined,
+        senderName,
+        replyToId: replyContext?.id,
+        replyToBody: replyContext?.body,
+        replyToSender: replyContext?.sender,
+        replyToSenderJid: replyContext?.senderJid,
+        replyToSenderE164: replyContext?.senderE164,
+        groupSubject,
+        groupParticipants,
+        mentionedJids: mentionedJids ?? undefined,
+        selfJid,
+        selfE164,
+        location: location ?? undefined,
+        sendComposing,
+        reply,
+        sendMedia,
+      };
+
       if (hookRunner?.hasHooks("whatsapp_messages_upsert")) {
         void hookRunner
           .runWhatsAppMessagesUpsert(
             {
               type: upsert.type,
-              message: msg as unknown,
+              message: hookMessage,
               metadata: accessControlInput,
             },
             {
@@ -262,19 +320,14 @@ export async function monitorWebInbox(options: {
         continue;
       }
 
-      const location = extractLocationData(msg.message ?? undefined);
-      const locationText = location ? formatLocationText(location) : undefined;
-      let body = extractText(msg.message ?? undefined);
-      if (locationText) {
-        body = [body, locationText].filter(Boolean).join("\n").trim();
-      }
+      let body = hookBody;
       if (!body) {
-        body = extractMediaPlaceholder(msg.message ?? undefined);
-        if (!body) {
+        const mediaPlaceholder = extractMediaPlaceholder(msg.message ?? undefined);
+        if (!mediaPlaceholder) {
           continue;
         }
+        body = mediaPlaceholder;
       }
-      const replyContext = describeReplyContext(msg.message as proto.IMessage | undefined);
 
       let mediaPath: string | undefined;
       let mediaType: string | undefined;
@@ -301,24 +354,6 @@ export async function monitorWebInbox(options: {
       } catch (err) {
         logVerbose(`Inbound media download failed: ${String(err)}`);
       }
-
-      const chatJid = remoteJid;
-      const sendComposing = async () => {
-        try {
-          await sock.sendPresenceUpdate("composing", chatJid);
-        } catch (err) {
-          logVerbose(`Presence update failed: ${String(err)}`);
-        }
-      };
-      const reply = async (text: string) => {
-        await sock.sendMessage(chatJid, { text });
-      };
-      const sendMedia = async (payload: AnyMessageContent) => {
-        await sock.sendMessage(chatJid, payload);
-      };
-      const timestamp = messageTimestampMs;
-      const mentionedJids = extractMentionedJids(msg.message as proto.IMessage | undefined);
-      const senderName = msg.pushName ?? undefined;
 
       inboundLogger.info(
         { from, to: selfE164 ?? "me", body, mediaPath, mediaType, mediaFileName, timestamp },

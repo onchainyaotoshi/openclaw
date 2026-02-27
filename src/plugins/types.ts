@@ -13,6 +13,7 @@ import type { GatewayRequestHandler } from "../gateway/server-methods/types.js";
 import type { InternalHookHandler } from "../hooks/internal-hooks.js";
 import type { HookEntry } from "../hooks/types.js";
 import type { RuntimeEnv } from "../runtime.js";
+import type { WebInboundMessage } from "../web/inbound/types.js";
 import type { WizardPrompter } from "../wizard/prompts.js";
 import type { PluginRuntime } from "./runtime/types.js";
 
@@ -453,7 +454,7 @@ export type PluginHookMessageReceivedEvent = {
 // whatsapp_messages_upsert hook
 export type PluginHookWhatsAppMessagesUpsertEvent = {
   type?: string;
-  message?: unknown;
+  message?: WebInboundMessage;
   metadata?: {
     accountId: string;
     from: string;
