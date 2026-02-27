@@ -307,6 +307,7 @@ export type PluginHookName =
   | "after_compaction"
   | "before_reset"
   | "message_received"
+  | "whatsapp_messages_upsert"
   | "message_sending"
   | "message_sent"
   | "before_tool_call"
@@ -446,6 +447,13 @@ export type PluginHookMessageReceivedEvent = {
   from: string;
   content: string;
   timestamp?: number;
+  metadata?: Record<string, unknown>;
+};
+
+// whatsapp_messages_upsert hook
+export type PluginHookWhatsAppMessagesUpsertEvent = {
+  type?: string;
+  messages?: unknown[];
   metadata?: Record<string, unknown>;
 };
 
@@ -691,6 +699,10 @@ export type PluginHookHandlerMap = {
   ) => Promise<void> | void;
   message_received: (
     event: PluginHookMessageReceivedEvent,
+    ctx: PluginHookMessageContext,
+  ) => Promise<void> | void;
+  whatsapp_messages_upsert: (
+    event: PluginHookWhatsAppMessagesUpsertEvent,
     ctx: PluginHookMessageContext,
   ) => Promise<void> | void;
   message_sending: (

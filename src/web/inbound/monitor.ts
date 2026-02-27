@@ -7,6 +7,7 @@ import { recordChannelActivity } from "../../infra/channel-activity.js";
 import { getChildLogger } from "../../logging/logger.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { saveMediaBuffer } from "../../media/store.js";
+import { getGlobalHookRunner } from "../../plugins/hook-runner-global.js";
 import { jidToE164, resolveJidToE164 } from "../../utils.js";
 import { createWaSocket, getStatusCode, waitForWaConnection } from "../session.js";
 import { checkInboundAccessControl } from "./access-control.js";
@@ -118,6 +119,7 @@ export async function monitorWebInbox(options: {
   >();
   const GROUP_META_TTL_MS = 5 * 60 * 1000; // 5 minutes
   const lidLookup = sock.signalRepository?.lidMapping;
+  const hookRunner = getGlobalHookRunner();
 
   const resolveInboundJid = async (jid: string | null | undefined): Promise<string | null> =>
     resolveJidToE164(jid, { authDir: options.authDir, lidLookup });
@@ -152,6 +154,26 @@ export async function monitorWebInbox(options: {
   };
 
   const handleMessagesUpsert = async (upsert: { type?: string; messages?: Array<WAMessage> }) => {
+    if (hookRunner?.hasHooks("whatsapp_messages_upsert")) {
+      void hookRunner
+        .runWhatsAppMessagesUpsert(
+          {
+            type: upsert.type,
+            messages: upsert.messages as unknown[] | undefined,
+            metadata: {
+              rawMessageCount: upsert.messages?.length ?? 0,
+            },
+          },
+          {
+            channelId: "whatsapp",
+            accountId: options.accountId,
+          },
+        )
+        .catch((err) => {
+          logVerbose(`monitor-web-inbox: whatsapp_messages_upsert hook failed: ${String(err)}`);
+        });
+    }
+
     if (upsert.type !== "notify" && upsert.type !== "append") {
       return;
     }

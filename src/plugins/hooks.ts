@@ -28,6 +28,7 @@ import type {
   PluginHookGatewayStopEvent,
   PluginHookMessageContext,
   PluginHookMessageReceivedEvent,
+  PluginHookWhatsAppMessagesUpsertEvent,
   PluginHookMessageSendingEvent,
   PluginHookMessageSendingResult,
   PluginHookMessageSentEvent,
@@ -68,6 +69,7 @@ export type {
   PluginHookAfterCompactionEvent,
   PluginHookMessageContext,
   PluginHookMessageReceivedEvent,
+  PluginHookWhatsAppMessagesUpsertEvent,
   PluginHookMessageSendingEvent,
   PluginHookMessageSendingResult,
   PluginHookMessageSentEvent,
@@ -384,6 +386,17 @@ export function createHookRunner(registry: PluginRegistry, options: HookRunnerOp
     ctx: PluginHookMessageContext,
   ): Promise<void> {
     return runVoidHook("message_received", event, ctx);
+  }
+
+  /**
+   * Run whatsapp_messages_upsert hook.
+   * Runs in parallel (fire-and-forget).
+   */
+  async function runWhatsAppMessagesUpsert(
+    event: PluginHookWhatsAppMessagesUpsertEvent,
+    ctx: PluginHookMessageContext,
+  ): Promise<void> {
+    return runVoidHook("whatsapp_messages_upsert", event, ctx);
   }
 
   /**
@@ -726,6 +739,7 @@ export function createHookRunner(registry: PluginRegistry, options: HookRunnerOp
     runBeforeReset,
     // Message hooks
     runMessageReceived,
+    runWhatsAppMessagesUpsert,
     runMessageSending,
     runMessageSent,
     // Tool hooks

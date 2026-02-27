@@ -6,6 +6,7 @@ import { monitorWebInbox } from "./inbound.js";
 import {
   DEFAULT_ACCOUNT_ID,
   getAuthDir,
+  getGlobalHookRunnerMock,
   getSock,
   installWebMonitorInboxUnitTestHooks,
 } from "./monitor-inbox.test-harness.js";
@@ -133,6 +134,38 @@ describe("web monitor inbox", () => {
     expect(sock.sendMessage).toHaveBeenCalledWith("999@s.whatsapp.net", {
       text: "pong",
     });
+
+    await listener.close();
+  });
+
+  it("emits whatsapp_messages_upsert hook before notify/append filtering", async () => {
+    const onMessage = vi.fn(async () => {
+      return;
+    });
+    const runWhatsAppMessagesUpsert = vi.fn().mockResolvedValue(undefined);
+    getGlobalHookRunnerMock.mockReturnValue({
+      hasHooks: (hookName: string) => hookName === "whatsapp_messages_upsert",
+      runWhatsAppMessagesUpsert,
+    });
+
+    const { listener, sock } = await startInboxMonitor(onMessage);
+    const upsert = {
+      type: "receipt",
+      messages: [{ key: { id: "a", remoteJid: "999@s.whatsapp.net" } }],
+    };
+
+    sock.ev.emit("messages.upsert", upsert);
+    await tick();
+
+    expect(runWhatsAppMessagesUpsert).toHaveBeenCalledWith(
+      {
+        type: "receipt",
+        messages: upsert.messages,
+        metadata: { rawMessageCount: 1 },
+      },
+      { channelId: "whatsapp", accountId: DEFAULT_ACCOUNT_ID },
+    );
+    expect(onMessage).not.toHaveBeenCalled();
 
     await listener.close();
   });

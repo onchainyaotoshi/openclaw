@@ -30,6 +30,7 @@ export const readAllowFromStoreMock: AnyMockFn = vi.fn().mockResolvedValue([]);
 export const upsertPairingRequestMock: AnyMockFn = vi
   .fn()
   .mockResolvedValue({ code: "PAIRCODE", created: true });
+export const getGlobalHookRunnerMock: AnyMockFn = vi.fn().mockReturnValue(null);
 
 export type MockSock = {
   ev: EventEmitter;
@@ -96,6 +97,10 @@ vi.mock("./session.js", () => ({
   getStatusCode: vi.fn(() => 500),
 }));
 
+vi.mock("../plugins/hook-runner-global.js", () => ({
+  getGlobalHookRunner: () => getGlobalHookRunnerMock(),
+}));
+
 export function getSock(): MockSock {
   return sock;
 }
@@ -120,6 +125,7 @@ export function installWebMonitorInboxUnitTestHooks(opts?: { authDir?: boolean }
       code: "PAIRCODE",
       created: true,
     });
+    getGlobalHookRunnerMock.mockReturnValue(null);
     const { resetWebInboundDedupe } = await import("./inbound.js");
     resetWebInboundDedupe();
     if (createAuthDir) {
