@@ -13,6 +13,7 @@ import type { GatewayRequestHandler } from "../gateway/server-methods/types.js";
 import type { InternalHookHandler } from "../hooks/internal-hooks.js";
 import type { HookEntry } from "../hooks/types.js";
 import type { RuntimeEnv } from "../runtime.js";
+import type { WebInboundMessage } from "../web/inbound/types.js";
 import type { WizardPrompter } from "../wizard/prompts.js";
 import type { PluginRuntime } from "./runtime/types.js";
 
@@ -307,6 +308,7 @@ export type PluginHookName =
   | "after_compaction"
   | "before_reset"
   | "message_received"
+  | "whatsapp_messages_upsert"
   | "message_sending"
   | "message_sent"
   | "before_tool_call"
@@ -447,6 +449,27 @@ export type PluginHookMessageReceivedEvent = {
   content: string;
   timestamp?: number;
   metadata?: Record<string, unknown>;
+};
+
+// whatsapp_messages_upsert hook
+export type PluginHookWhatsAppMessagesUpsertEvent = {
+  type?: string;
+  message?: WebInboundMessage;
+  metadata?: {
+    accountId: string;
+    from: string;
+    selfE164: string | null;
+    senderE164: string | null;
+    group: boolean;
+    pushName?: string;
+    isFromMe: boolean;
+    messageTimestampMs?: number;
+    connectedAtMs?: number;
+    sock: {
+      sendMessage: (jid: string, content: { text: string }) => Promise<unknown>;
+    };
+    remoteJid: string;
+  };
 };
 
 // message_sending hook
@@ -691,6 +714,10 @@ export type PluginHookHandlerMap = {
   ) => Promise<void> | void;
   message_received: (
     event: PluginHookMessageReceivedEvent,
+    ctx: PluginHookMessageContext,
+  ) => Promise<void> | void;
+  whatsapp_messages_upsert: (
+    event: PluginHookWhatsAppMessagesUpsertEvent,
     ctx: PluginHookMessageContext,
   ) => Promise<void> | void;
   message_sending: (

@@ -7,6 +7,7 @@ import { recordChannelActivity } from "../../infra/channel-activity.js";
 import { getChildLogger } from "../../logging/logger.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { saveMediaBuffer } from "../../media/store.js";
+import { getGlobalHookRunner } from "../../plugins/hook-runner-global.js";
 import { jidToE164, resolveJidToE164 } from "../../utils.js";
 import { createWaSocket, getStatusCode, waitForWaConnection } from "../session.js";
 import { checkInboundAccessControl } from "./access-control.js";
@@ -118,6 +119,7 @@ export async function monitorWebInbox(options: {
   >();
   const GROUP_META_TTL_MS = 5 * 60 * 1000; // 5 minutes
   const lidLookup = sock.signalRepository?.lidMapping;
+  const hookRunner = getGlobalHookRunner();
 
   const resolveInboundJid = async (jid: string | null | undefined): Promise<string | null> =>
     resolveJidToE164(jid, { authDir: options.authDir, lidLookup });
@@ -199,7 +201,7 @@ export async function monitorWebInbox(options: {
         ? Number(msg.messageTimestamp) * 1000
         : undefined;
 
-      const access = await checkInboundAccessControl({
+      const accessControlInput = {
         accountId: options.accountId,
         from,
         selfE164,
@@ -209,48 +211,40 @@ export async function monitorWebInbox(options: {
         isFromMe: Boolean(msg.key?.fromMe),
         messageTimestampMs,
         connectedAtMs,
-        sock: { sendMessage: (jid, content) => sock.sendMessage(jid, content) },
+        sock: {
+          sendMessage: (jid: string, content: { text: string }) => sock.sendMessage(jid, content),
+        },
         remoteJid,
-      });
-      if (!access.allowed) {
-        continue;
-      }
-
-      if (id && !access.isSelfChat && options.sendReadReceipts !== false) {
-        const participant = msg.key?.participant;
-        try {
-          await sock.readMessages([{ remoteJid, id, participant, fromMe: false }]);
-          if (shouldLogVerbose()) {
-            const suffix = participant ? ` (participant ${participant})` : "";
-            logVerbose(`Marked message ${id} as read for ${remoteJid}${suffix}`);
-          }
-        } catch (err) {
-          logVerbose(`Failed to mark message ${id} read: ${String(err)}`);
-        }
-      } else if (id && access.isSelfChat && shouldLogVerbose()) {
-        // Self-chat mode: never auto-send read receipts (blue ticks) on behalf of the owner.
-        logVerbose(`Self-chat mode: skipping read receipt for ${id}`);
-      }
-
-      // If this is history/offline catch-up, mark read above but skip auto-reply.
-      if (upsert.type === "append") {
-        continue;
-      }
+      };
 
       const location = extractLocationData(msg.message ?? undefined);
       const locationText = location ? formatLocationText(location) : undefined;
-      let body = extractText(msg.message ?? undefined);
+      let hookBody = extractText(msg.message ?? undefined);
       if (locationText) {
-        body = [body, locationText].filter(Boolean).join("\n").trim();
+        hookBody = [hookBody, locationText].filter(Boolean).join("\n").trim();
       }
-      if (!body) {
-        body = extractMediaPlaceholder(msg.message ?? undefined);
-        if (!body) {
-          continue;
-        }
+      if (!hookBody) {
+        hookBody = extractMediaPlaceholder(msg.message ?? undefined) ?? "";
       }
       const replyContext = describeReplyContext(msg.message as proto.IMessage | undefined);
+      const mentionedJids = extractMentionedJids(msg.message as proto.IMessage | undefined);
+      const senderName = msg.pushName ?? undefined;
 
+      const chatJid = remoteJid;
+      const sendComposing = async () => {
+        try {
+          await sock.sendPresenceUpdate("composing", chatJid);
+        } catch (err) {
+          logVerbose(`Presence update failed: ${String(err)}`);
+        }
+      };
+      const reply = async (text: string) => {
+        await sock.sendMessage(chatJid, { text });
+      };
+      const sendMedia = async (payload: AnyMessageContent) => {
+        await sock.sendMessage(chatJid, payload);
+      };
+      const timestamp = messageTimestampMs;
       let mediaPath: string | undefined;
       let mediaType: string | undefined;
       let mediaFileName: string | undefined;
@@ -277,23 +271,92 @@ export async function monitorWebInbox(options: {
         logVerbose(`Inbound media download failed: ${String(err)}`);
       }
 
-      const chatJid = remoteJid;
-      const sendComposing = async () => {
+      const hookMessage: WebInboundMessage = {
+        id,
+        from,
+        conversationId: from,
+        to: selfE164 ?? "me",
+        accountId: options.accountId,
+        body: hookBody,
+        pushName: senderName,
+        timestamp,
+        chatType: group ? "group" : "direct",
+        chatId: remoteJid,
+        senderJid: participantJid,
+        senderE164: senderE164 ?? undefined,
+        senderName,
+        replyToId: replyContext?.id,
+        replyToBody: replyContext?.body,
+        replyToSender: replyContext?.sender,
+        replyToSenderJid: replyContext?.senderJid,
+        replyToSenderE164: replyContext?.senderE164,
+        groupSubject,
+        groupParticipants,
+        mentionedJids: mentionedJids ?? undefined,
+        selfJid,
+        selfE164,
+        location: location ?? undefined,
+        sendComposing,
+        reply,
+        sendMedia,
+        mediaPath,
+        mediaType,
+        mediaFileName,
+      };
+
+      if (hookRunner?.hasHooks("whatsapp_messages_upsert")) {
+        void hookRunner
+          .runWhatsAppMessagesUpsert(
+            {
+              type: upsert.type,
+              message: hookMessage,
+              metadata: accessControlInput,
+            },
+            {
+              channelId: "whatsapp",
+              accountId: options.accountId,
+              conversationId: from,
+            },
+          )
+          .catch((err) => {
+            logVerbose(`monitor-web-inbox: whatsapp_messages_upsert hook failed: ${String(err)}`);
+          });
+      }
+
+      const access = await checkInboundAccessControl(accessControlInput);
+      if (!access.allowed) {
+        continue;
+      }
+
+      if (id && access.shouldMarkRead && !access.isSelfChat && options.sendReadReceipts !== false) {
+        const participant = msg.key?.participant;
         try {
-          await sock.sendPresenceUpdate("composing", chatJid);
+          await sock.readMessages([{ remoteJid, id, participant, fromMe: false }]);
+          if (shouldLogVerbose()) {
+            const suffix = participant ? ` (participant ${participant})` : "";
+            logVerbose(`Marked message ${id} as read for ${remoteJid}${suffix}`);
+          }
         } catch (err) {
-          logVerbose(`Presence update failed: ${String(err)}`);
+          logVerbose(`Failed to mark message ${id} read: ${String(err)}`);
         }
-      };
-      const reply = async (text: string) => {
-        await sock.sendMessage(chatJid, { text });
-      };
-      const sendMedia = async (payload: AnyMessageContent) => {
-        await sock.sendMessage(chatJid, payload);
-      };
-      const timestamp = messageTimestampMs;
-      const mentionedJids = extractMentionedJids(msg.message as proto.IMessage | undefined);
-      const senderName = msg.pushName ?? undefined;
+      } else if (id && access.isSelfChat && shouldLogVerbose()) {
+        // Self-chat mode: never auto-send read receipts (blue ticks) on behalf of the owner.
+        logVerbose(`Self-chat mode: skipping read receipt for ${id}`);
+      }
+
+      // If this is history/offline catch-up, mark read above but skip auto-reply.
+      if (upsert.type === "append") {
+        continue;
+      }
+
+      let body = hookBody;
+      if (!body) {
+        const mediaPlaceholder = extractMediaPlaceholder(msg.message ?? undefined);
+        if (!mediaPlaceholder) {
+          continue;
+        }
+        body = mediaPlaceholder;
+      }
 
       inboundLogger.info(
         { from, to: selfE164 ?? "me", body, mediaPath, mediaType, mediaFileName, timestamp },

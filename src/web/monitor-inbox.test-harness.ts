@@ -30,6 +30,13 @@ export const readAllowFromStoreMock: AnyMockFn = vi.fn().mockResolvedValue([]);
 export const upsertPairingRequestMock: AnyMockFn = vi
   .fn()
   .mockResolvedValue({ code: "PAIRCODE", created: true });
+export const getGlobalHookRunnerMock: AnyMockFn = vi.fn().mockReturnValue(null);
+export const checkInboundAccessControlMock: AnyMockFn = vi.fn().mockResolvedValue({
+  allowed: true,
+  shouldMarkRead: true,
+  isSelfChat: false,
+  resolvedAccountId: DEFAULT_ACCOUNT_ID,
+});
 
 export type MockSock = {
   ev: EventEmitter;
@@ -96,6 +103,14 @@ vi.mock("./session.js", () => ({
   getStatusCode: vi.fn(() => 500),
 }));
 
+vi.mock("../plugins/hook-runner-global.js", () => ({
+  getGlobalHookRunner: () => getGlobalHookRunnerMock(),
+}));
+
+vi.mock("./inbound/access-control.js", () => ({
+  checkInboundAccessControl: (...args: unknown[]) => checkInboundAccessControlMock(...args),
+}));
+
 export function getSock(): MockSock {
   return sock;
 }
@@ -119,6 +134,13 @@ export function installWebMonitorInboxUnitTestHooks(opts?: { authDir?: boolean }
     upsertPairingRequestMock.mockResolvedValue({
       code: "PAIRCODE",
       created: true,
+    });
+    getGlobalHookRunnerMock.mockReturnValue(null);
+    checkInboundAccessControlMock.mockResolvedValue({
+      allowed: true,
+      shouldMarkRead: true,
+      isSelfChat: false,
+      resolvedAccountId: DEFAULT_ACCOUNT_ID,
     });
     const { resetWebInboundDedupe } = await import("./inbound.js");
     resetWebInboundDedupe();

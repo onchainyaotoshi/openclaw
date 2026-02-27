@@ -5,7 +5,9 @@ import { describe, expect, it, vi } from "vitest";
 import { monitorWebInbox } from "./inbound.js";
 import {
   DEFAULT_ACCOUNT_ID,
+  checkInboundAccessControlMock,
   getAuthDir,
+  getGlobalHookRunnerMock,
   getSock,
   installWebMonitorInboxUnitTestHooks,
 } from "./monitor-inbox.test-harness.js";
@@ -133,6 +135,76 @@ describe("web monitor inbox", () => {
     expect(sock.sendMessage).toHaveBeenCalledWith("999@s.whatsapp.net", {
       text: "pong",
     });
+
+    await listener.close();
+  });
+
+  it("emits whatsapp_messages_upsert hook before access control", async () => {
+    const onMessage = vi.fn(async () => {
+      return;
+    });
+    const runWhatsAppMessagesUpsert = vi.fn().mockResolvedValue(undefined);
+    getGlobalHookRunnerMock.mockReturnValue({
+      hasHooks: (hookName: string) => hookName === "whatsapp_messages_upsert",
+      runWhatsAppMessagesUpsert,
+    });
+
+    const { listener, sock } = await startInboxMonitor(onMessage);
+    const upsert = buildMessageUpsert({
+      id: "abc",
+      remoteJid: "999@s.whatsapp.net",
+      text: "ping",
+      timestamp: 1_700_000_000,
+      pushName: "Tester",
+    });
+
+    sock.ev.emit("messages.upsert", upsert);
+    await tick();
+
+    expect(runWhatsAppMessagesUpsert).toHaveBeenCalledWith(
+      {
+        type: "notify",
+        message: expect.objectContaining({
+          id: "abc",
+          from: "+999",
+          conversationId: "+999",
+          to: "+123",
+          accountId: DEFAULT_ACCOUNT_ID,
+          body: "ping",
+          chatType: "direct",
+          chatId: "999@s.whatsapp.net",
+          senderE164: "+999",
+          mediaPath: undefined,
+          mediaType: undefined,
+          mediaFileName: undefined,
+          sendComposing: expect.any(Function),
+          reply: expect.any(Function),
+          sendMedia: expect.any(Function),
+        }),
+        metadata: {
+          accountId: DEFAULT_ACCOUNT_ID,
+          from: "+999",
+          selfE164: "+123",
+          senderE164: "+999",
+          group: false,
+          pushName: "Tester",
+          isFromMe: false,
+          messageTimestampMs: 1_700_000_000_000,
+          connectedAtMs: expect.any(Number),
+          sock: { sendMessage: expect.any(Function) },
+          remoteJid: "999@s.whatsapp.net",
+        },
+      },
+      {
+        channelId: "whatsapp",
+        accountId: DEFAULT_ACCOUNT_ID,
+        conversationId: "+999",
+      },
+    );
+    expect(checkInboundAccessControlMock).toHaveBeenCalledTimes(1);
+    expect(runWhatsAppMessagesUpsert.mock.invocationCallOrder[0]).toBeLessThan(
+      checkInboundAccessControlMock.mock.invocationCallOrder[0],
+    );
 
     await listener.close();
   });
