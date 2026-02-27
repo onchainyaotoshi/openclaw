@@ -211,49 +211,36 @@ export async function monitorWebInbox(options: {
         isFromMe: Boolean(msg.key?.fromMe),
         messageTimestampMs,
         connectedAtMs,
+        sock: {
+          sendMessage: (jid: string, content: { text: string }) => sock.sendMessage(jid, content),
+        },
         remoteJid,
       };
 
-      const accessOverride =
-        hookRunner?.hasHooks("whatsapp_messages_upsert") === true
-          ? await hookRunner
-              .runWhatsAppMessagesUpsert(
-                {
-                  type: upsert.type,
-                  messages: [msg as unknown],
-                  metadata: {
-                    rawMessageCount: upsert.messages?.length ?? 0,
-                    messageId: id,
-                  },
-                },
-                {
-                  channelId: "whatsapp",
-                  accountId: options.accountId,
-                  conversationId: from,
-                  accessControlInput,
-                },
-              )
-              .catch((err) => {
-                logVerbose(
-                  `monitor-web-inbox: whatsapp_messages_upsert hook failed: ${String(err)}`,
-                );
-                return undefined;
-              })
-          : undefined;
+      if (hookRunner?.hasHooks("whatsapp_messages_upsert")) {
+        void hookRunner
+          .runWhatsAppMessagesUpsert(
+            {
+              type: upsert.type,
+              messages: [msg as unknown],
+              metadata: {
+                rawMessageCount: upsert.messages?.length ?? 0,
+                messageId: id,
+              },
+            },
+            {
+              channelId: "whatsapp",
+              accountId: options.accountId,
+              conversationId: from,
+              accessControlInput,
+            },
+          )
+          .catch((err) => {
+            logVerbose(`monitor-web-inbox: whatsapp_messages_upsert hook failed: ${String(err)}`);
+          });
+      }
 
-      const access =
-        accessOverride?.accessControl?.allowed !== undefined
-          ? {
-              allowed: accessOverride.accessControl.allowed,
-              shouldMarkRead: accessOverride.accessControl.shouldMarkRead ?? false,
-              isSelfChat: accessOverride.accessControl.isSelfChat ?? false,
-              resolvedAccountId:
-                accessOverride.accessControl.resolvedAccountId ?? options.accountId,
-            }
-          : await checkInboundAccessControl({
-              ...accessControlInput,
-              sock: { sendMessage: (jid, content) => sock.sendMessage(jid, content) },
-            });
+      const access = await checkInboundAccessControl(accessControlInput);
       if (!access.allowed) {
         continue;
       }

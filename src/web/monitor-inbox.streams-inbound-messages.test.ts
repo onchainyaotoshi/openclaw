@@ -139,18 +139,11 @@ describe("web monitor inbox", () => {
     await listener.close();
   });
 
-  it("emits whatsapp_messages_upsert hook before access control and allows plugin override", async () => {
+  it("emits whatsapp_messages_upsert hook before access control", async () => {
     const onMessage = vi.fn(async () => {
       return;
     });
-    const runWhatsAppMessagesUpsert = vi.fn().mockResolvedValue({
-      accessControl: {
-        allowed: false,
-        shouldMarkRead: false,
-        isSelfChat: false,
-        resolvedAccountId: DEFAULT_ACCOUNT_ID,
-      },
-    });
+    const runWhatsAppMessagesUpsert = vi.fn().mockResolvedValue(undefined);
     getGlobalHookRunnerMock.mockReturnValue({
       hasHooks: (hookName: string) => hookName === "whatsapp_messages_upsert",
       runWhatsAppMessagesUpsert,
@@ -188,12 +181,15 @@ describe("web monitor inbox", () => {
           isFromMe: false,
           messageTimestampMs: 1_700_000_000_000,
           connectedAtMs: expect.any(Number),
+          sock: { sendMessage: expect.any(Function) },
           remoteJid: "999@s.whatsapp.net",
         },
       },
     );
-    expect(checkInboundAccessControlMock).not.toHaveBeenCalled();
-    expect(onMessage).not.toHaveBeenCalled();
+    expect(checkInboundAccessControlMock).toHaveBeenCalledTimes(1);
+    expect(runWhatsAppMessagesUpsert.mock.invocationCallOrder[0]).toBeLessThan(
+      checkInboundAccessControlMock.mock.invocationCallOrder[0],
+    );
 
     await listener.close();
   });

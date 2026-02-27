@@ -30,7 +30,6 @@ import type {
   PluginHookMessageReceivedEvent,
   PluginHookWhatsAppMessagesUpsertContext,
   PluginHookWhatsAppMessagesUpsertEvent,
-  PluginHookWhatsAppMessagesUpsertResult,
   PluginHookMessageSendingEvent,
   PluginHookMessageSendingResult,
   PluginHookMessageSentEvent,
@@ -73,7 +72,6 @@ export type {
   PluginHookMessageReceivedEvent,
   PluginHookWhatsAppMessagesUpsertContext,
   PluginHookWhatsAppMessagesUpsertEvent,
-  PluginHookWhatsAppMessagesUpsertResult,
   PluginHookMessageSendingEvent,
   PluginHookMessageSendingResult,
   PluginHookMessageSentEvent,
@@ -394,26 +392,13 @@ export function createHookRunner(registry: PluginRegistry, options: HookRunnerOp
 
   /**
    * Run whatsapp_messages_upsert hook.
-   * Runs sequentially so plugins can deterministically decide access overrides.
+   * Runs in parallel (fire-and-forget).
    */
   async function runWhatsAppMessagesUpsert(
     event: PluginHookWhatsAppMessagesUpsertEvent,
     ctx: PluginHookWhatsAppMessagesUpsertContext,
-  ): Promise<PluginHookWhatsAppMessagesUpsertResult | undefined> {
-    return runModifyingHook<"whatsapp_messages_upsert", PluginHookWhatsAppMessagesUpsertResult>(
-      "whatsapp_messages_upsert",
-      event,
-      ctx,
-      (acc, next) => ({
-        accessControl: {
-          allowed: next.accessControl?.allowed ?? acc?.accessControl?.allowed,
-          shouldMarkRead: next.accessControl?.shouldMarkRead ?? acc?.accessControl?.shouldMarkRead,
-          isSelfChat: next.accessControl?.isSelfChat ?? acc?.accessControl?.isSelfChat,
-          resolvedAccountId:
-            next.accessControl?.resolvedAccountId ?? acc?.accessControl?.resolvedAccountId,
-        },
-      }),
-    );
+  ): Promise<void> {
+    return runVoidHook("whatsapp_messages_upsert", event, ctx);
   }
 
   /**
