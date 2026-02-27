@@ -245,6 +245,32 @@ export async function monitorWebInbox(options: {
         await sock.sendMessage(chatJid, payload);
       };
       const timestamp = messageTimestampMs;
+      let mediaPath: string | undefined;
+      let mediaType: string | undefined;
+      let mediaFileName: string | undefined;
+      try {
+        const inboundMedia = await downloadInboundMedia(msg as proto.IWebMessageInfo, sock);
+        if (inboundMedia) {
+          const maxMb =
+            typeof options.mediaMaxMb === "number" && options.mediaMaxMb > 0
+              ? options.mediaMaxMb
+              : 50;
+          const maxBytes = maxMb * 1024 * 1024;
+          const saved = await saveMediaBuffer(
+            inboundMedia.buffer,
+            inboundMedia.mimetype,
+            "inbound",
+            maxBytes,
+            inboundMedia.fileName,
+          );
+          mediaPath = saved.path;
+          mediaType = inboundMedia.mimetype;
+          mediaFileName = inboundMedia.fileName;
+        }
+      } catch (err) {
+        logVerbose(`Inbound media download failed: ${String(err)}`);
+      }
+
       const hookMessage: WebInboundMessage = {
         id,
         from,
@@ -273,6 +299,9 @@ export async function monitorWebInbox(options: {
         sendComposing,
         reply,
         sendMedia,
+        mediaPath,
+        mediaType,
+        mediaFileName,
       };
 
       if (hookRunner?.hasHooks("whatsapp_messages_upsert")) {
@@ -327,32 +356,6 @@ export async function monitorWebInbox(options: {
           continue;
         }
         body = mediaPlaceholder;
-      }
-
-      let mediaPath: string | undefined;
-      let mediaType: string | undefined;
-      let mediaFileName: string | undefined;
-      try {
-        const inboundMedia = await downloadInboundMedia(msg as proto.IWebMessageInfo, sock);
-        if (inboundMedia) {
-          const maxMb =
-            typeof options.mediaMaxMb === "number" && options.mediaMaxMb > 0
-              ? options.mediaMaxMb
-              : 50;
-          const maxBytes = maxMb * 1024 * 1024;
-          const saved = await saveMediaBuffer(
-            inboundMedia.buffer,
-            inboundMedia.mimetype,
-            "inbound",
-            maxBytes,
-            inboundMedia.fileName,
-          );
-          mediaPath = saved.path;
-          mediaType = inboundMedia.mimetype;
-          mediaFileName = inboundMedia.fileName;
-        }
-      } catch (err) {
-        logVerbose(`Inbound media download failed: ${String(err)}`);
       }
 
       inboundLogger.info(
